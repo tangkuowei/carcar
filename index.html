@@ -107,8 +107,8 @@ h3{margin:0 0 8px;font-size:16px}
   <div class="card">
     <h3 id="fTitle">新增車牌</h3>
     <label>車牌號碼 *</label><input id="fPlate" placeholder="例：ABC-1234">
-    <label>車主姓名 *</label><input id="fName">
-    <label>戶號／地址</label><input id="fUnit" placeholder="例：A棟5樓之2">
+    <label>車主姓名</label><input id="fName">
+    <label>戶號／地址 *</label><input id="fUnit" placeholder="例：A棟5樓之2">
     <label>電話</label><input id="fPhone" type="tel">
     <label>備註</label><input id="fNote" placeholder="例：機車、訪客、車位B2-15">
     <div class="row" style="margin-top:12px">
@@ -127,7 +127,7 @@ h3{margin:0 0 8px;font-size:16px}
       <button class="btn gray sm" id="btnVExport">匯出車牌 CSV</button>
       <button class="btn gray sm" id="btnVImport">匯入車牌 CSV</button>
     </div>
-    <p class="mini">CSV 欄位順序：車牌,姓名,戶號,電話,備註（第一列可放標題）。也可以直接在 Google 試算表的「車牌資料」工作表裡編輯，手機會自動同步。</p>
+    <p class="mini">CSV 欄位順序：車牌,姓名,戶號,電話,備註（第一列可放標題；車牌和戶號必填，其他可空白）。也可以直接在 Google 試算表的「車牌資料」工作表裡編輯，手機會自動同步。</p>
     <input type="file" id="fileCSV" accept=".csv,text/csv" hidden>
   </div>
 </section>
@@ -310,6 +310,7 @@ function showTab(id){
 }
 
 /* ---------- 車牌比對 ---------- */
+const who=v=>v.name||v.unit||'';
 const keyOf=s=>(s||'').toUpperCase().replace(/[^A-Z0-9]/g,'');
 const CONF={O:'0',Q:'0',D:'0',I:'1',B:'8',S:'5',Z:'2',G:'6'};
 const fuzz=k=>k.replace(/[OQDIBSZG]/g,c=>CONF[c]);
@@ -461,8 +462,8 @@ function showResult(e){
   const box=$('#resultBox');
   if(e.status==='ok'){
     box.innerHTML=`<div class="result ok"><div>✅ 辨識成功${e.similar?'（相似比對，請目視確認）':''}</div>
-      <div class="pl">${esc(e.plate)}</div><div class="nm">${esc(e.name)}</div>
-      <div class="dt">${esc(e.unit||'')} ${e.phone?'｜☎ '+esc(e.phone):''}</div>
+      <div class="pl">${esc(e.plate)}</div><div class="nm">${esc(e.name||e.unit||'')}</div>
+      <div class="dt">${e.name?esc(e.unit||''):''} ${e.phone?'｜☎ '+esc(e.phone):''}</div>
       ${e.note?`<div class="dt">備註：${esc(e.note)}</div>`:''}
       ${e.similar?`<div class="dt">讀到：${esc(e.read)}</div>`:''}</div>`;
   }else if(e.status==='unknown'){
@@ -486,11 +487,11 @@ function beep(st){
 /* ---------- 車牌資料 ---------- */
 let editId=null;
 $('#btnSave').onclick=async()=>{
-  const plate=$('#fPlate').value.trim().toUpperCase(),name=$('#fName').value.trim();
-  if(!keyOf(plate)||!name){toast('車牌和車主姓名必填');return}
+  const plate=$('#fPlate').value.trim().toUpperCase(),unit=$('#fUnit').value.trim();
+  if(!keyOf(plate)||!unit){toast('車牌號碼和戶號必填');return}
   const dup=vehicles.find(v=>keyOf(v.plate)===keyOf(plate)&&v.id!==editId);
-  if(dup){toast('這個車牌已登記（'+dup.name+'）');return}
-  const data={plate,name,unit:$('#fUnit').value.trim(),phone:$('#fPhone').value.trim(),note:$('#fNote').value.trim()};
+  if(dup){toast('這個車牌已登記（'+who(dup)+'）');return}
+  const data={plate,unit,name:$('#fName').value.trim(),phone:$('#fPhone').value.trim(),note:$('#fNote').value.trim()};
   const wasEdit=!!editId;
   if(cloudOn()){
     const btn=$('#btnSave');btn.disabled=true;btn.textContent='儲存到雲端中…';
@@ -509,11 +510,11 @@ function resetForm(){editId=null;['fPlate','fName','fUnit','fPhone','fNote'].for
 function editV(id){const v=vehicles.find(x=>x.id===id);if(!v)return;editId=id;
   $('#fPlate').value=v.plate;$('#fName').value=v.name;$('#fUnit').value=v.unit||'';$('#fPhone').value=v.phone||'';$('#fNote').value=v.note||'';
   $('#fTitle').textContent='編輯車牌';$('#btnCancel').style.display='';window.scrollTo({top:0,behavior:'smooth'})}
-async function delV(id){const v=vehicles.find(x=>x.id===id);if(!v||!confirm('確定刪除 '+v.plate+'（'+v.name+'）？'))return;
+async function delV(id){const v=vehicles.find(x=>x.id===id);if(!v||!confirm('確定刪除 '+v.plate+'（'+who(v)+'）？'))return;
   if(cloudOn()){try{const j=await api('deleteVehicle',{id});setVehicles(j.vehicles)}catch(e){toast('刪除失敗：'+e.message);return}}
   else{vehicles=vehicles.filter(x=>x.id!==id);save('lpr_vehicles',vehicles)}
   renderVehicles()}
-function addFromLog(p){showTab('t-veh');resetForm();$('#fPlate').value=p;$('#fName').focus()}
+function addFromLog(p){showTab('t-veh');resetForm();$('#fPlate').value=p;$('#fUnit').focus()}
 $('#vSearch').oninput=renderVehicles;
 $('#vList').onclick=ev=>{const b=ev.target.closest('button[data-id]');if(!b)return;b.dataset.act==='edit'?editV(b.dataset.id):delV(b.dataset.id)};
 function renderVehicles(){
@@ -521,8 +522,8 @@ function renderVehicles(){
   const arr=vehicles.filter(v=>!q||[v.plate,v.name,v.unit,v.phone,v.note].join(' ').toUpperCase().includes(q)||(qk&&keyOf(v.plate).includes(qk)))
     .sort((a,b)=>a.plate.localeCompare(b.plate));
   $('#vCount').textContent=vehicles.length;
-  $('#vList').innerHTML=arr.length?arr.map(v=>`<div class="it"><div class="mid"><div class="t1">${esc(v.plate)}　${esc(v.name)}</div>
-    <div class="t2">${esc(v.unit||'')} ${v.phone?'☎ '+esc(v.phone):''} ${v.note?'｜'+esc(v.note):''}</div></div>
+  $('#vList').innerHTML=arr.length?arr.map(v=>`<div class="it"><div class="mid"><div class="t1">${esc(v.plate)}　${esc(who(v))}</div>
+    <div class="t2">${v.name?esc(v.unit||''):''} ${v.phone?'☎ '+esc(v.phone):''} ${v.note?'｜'+esc(v.note):''}</div></div>
     <button class="btn gray sm" data-act="edit" data-id="${esc(v.id)}">編輯</button><button class="btn red sm" data-act="del" data-id="${esc(v.id)}">刪除</button></div>`).join('')
     :'<div class="empty">尚無資料，請在上方新增</div>';
 }
@@ -552,8 +553,8 @@ function renderLogs(){
   $('#stat').textContent=`今日 ${s.today} 筆：成功 ${s.ok}／未登記 ${s.unknown}／無法讀取 ${s.fail}　（總共 ${s.total} 筆${pending.length?`，其中 ${pending.length} 筆待上傳`:''}）`;
   const arr=filteredLogs().slice(0,500);
   $('#lList').innerHTML=arr.length?arr.map(l=>`<div class="it">${l.img?`<img src="${esc(l.img)}" loading="lazy" referrerpolicy="no-referrer">`:'<img alt="">'}
-    <div class="mid"><div class="t1">${esc(l.status==='ok'?l.plate:(l.read||'（空白）'))} ${l.status==='ok'?'　'+esc(l.name):''}</div>
-    <div class="t2">${fmt(l.time)}｜${esc(l.source||'')}${l.device?'・'+esc(l.device):''}${l.status==='ok'&&l.unit?'｜'+esc(l.unit):''}${l.similar?'｜相似比對 讀到 '+esc(l.read):''}${l._pending&&cloudOn()?'｜<b style="color:var(--warn)">待上傳</b>':''}</div></div>
+    <div class="mid"><div class="t1">${esc(l.status==='ok'?l.plate:(l.read||'（空白）'))} ${l.status==='ok'?'　'+esc(who(l)):''}</div>
+    <div class="t2">${fmt(l.time)}｜${esc(l.source||'')}${l.device?'・'+esc(l.device):''}${l.status==='ok'&&l.unit&&l.name?'｜'+esc(l.unit):''}${l.similar?'｜相似比對 讀到 '+esc(l.read):''}${l._pending&&cloudOn()?'｜<b style="color:var(--warn)">待上傳</b>':''}</div></div>
     <span class="badge b-${l.status}">${ST[l.status]}</span>
     ${l.status==='unknown'?`<button class="btn gray sm" data-add="${esc(l.read)}">登記</button>`:''}</div>`).join('')
     :'<div class="empty">沒有符合的紀錄</div>';
@@ -587,11 +588,12 @@ function parseCSV(t){t=t.replace(/^﻿/,'');const rows=[];let row=[],f='',q=fals
   if(f||row.length){row.push(f);rows.push(row)}return rows}
 $('#fileCSV').onchange=async e=>{
   const f=e.target.files[0];if(!f)return;const rows=parseCSV(await f.text());
-  const list=[];
-  rows.forEach((r,i)=>{if(i===0&&/車牌/.test(r[0]||''))return;const plate=(r[0]||'').trim().toUpperCase(),name=(r[1]||'').trim();if(!keyOf(plate)||!name)return;
-    list.push({plate,name,unit:(r[2]||'').trim(),phone:(r[3]||'').trim(),note:(r[4]||'').trim()})});
+  const list=[];let skip=0;
+  rows.forEach((r,i)=>{if(i===0&&/車牌/.test(r[0]||''))return;const plate=(r[0]||'').trim().toUpperCase(),unit=(r[2]||'').trim();if(!keyOf(plate)||!unit){skip++;return}
+    list.push({plate,unit,name:(r[1]||'').trim(),phone:(r[3]||'').trim(),note:(r[4]||'').trim()})});
   e.target.value='';
-  if(!list.length){toast('檔案裡沒有可匯入的資料');return}
+  if(!list.length){toast('檔案裡沒有可匯入的資料（車牌和戶號必填）');return}
+  if(skip)toast(`有 ${skip} 筆缺車牌或戶號，已略過`);
   if(cloudOn()){
     try{toast('上傳中…');const j=await api('importVehicles',{list});setVehicles(j.vehicles);renderVehicles();toast(`匯入完成：新增 ${j.add} 筆、更新 ${j.upd} 筆`)}
     catch(err){toast('匯入失敗：'+err.message)}
