@@ -19,6 +19,8 @@
 *{box-sizing:border-box}
 body{margin:0;font-family:-apple-system,"PingFang TC","Microsoft JhengHei",sans-serif;background:var(--bg);color:var(--ink);padding-bottom:calc(70px + env(safe-area-inset-bottom))}
 header{background:#14213d;color:#fff;padding:14px 16px;font-size:18px;font-weight:700}
+.ver{font-size:12px;font-weight:600;background:rgba(255,255,255,.18);padding:2px 7px;border-radius:10px;vertical-align:2px}
+.vlog{font-size:13px;color:var(--sub);line-height:1.7;margin:6px 0 0;padding-left:18px}
 header{position:relative;padding-top:calc(14px + env(safe-area-inset-top))!important}
 .install{display:none;align-items:center;gap:10px;background:#e8f0fe;border-radius:12px;padding:10px 12px;margin-bottom:12px}
 .install img{width:40px;height:40px;border-radius:9px;flex:none}
@@ -77,7 +79,7 @@ h3{margin:0 0 8px;font-size:16px}
 </style>
 </head>
 <body>
-<header>車牌辨識管家<small>登記車牌 → 相機對準 → 自動辨識車主並記錄</small><span id="sync" class="sync">未設定雲端</span></header>
+<header>車牌辨識管家 <span class="ver" id="verTag"></span><small>登記車牌 → 相機對準 → 自動辨識車主並記錄</small><span id="sync" class="sync">未設定雲端</span></header>
 <main>
 
 <!-- ========== 掃描 ========== -->
@@ -201,6 +203,17 @@ h3{margin:0 0 8px;font-size:16px}
     </div>
   </div>
   <div class="card">
+    <h3>版本資訊</h3>
+    <div class="mini" style="margin:0" id="verInfo"></div>
+    <ul class="vlog">
+      <li><b>v1.4</b>　分享給同事 QR Code；加入版本號</li>
+      <li><b>v1.3</b>　新增車牌只有車牌號碼、戶號必填</li>
+      <li><b>v1.2</b>　可安裝到手機桌面、離線開啟</li>
+      <li><b>v1.1</b>　連接 Google 試算表，多支手機共用</li>
+      <li><b>v1.0</b>　車牌辨識、車牌資料、辨識紀錄（單機版）</li>
+    </ul>
+  </div>
+  <div class="card">
     <h3>同步狀態</h3>
     <div id="syncInfo" class="mini" style="margin:0 0 10px"></div>
     <button class="btn gray" id="btnSyncNow" style="width:100%">立即同步</button>
@@ -218,6 +231,7 @@ h3{margin:0 0 8px;font-size:16px}
 <div class="toast" id="toast"></div>
 
 <script>
+const APP_VER='1.4';
 const $=s=>document.querySelector(s);
 const WL='ABCDEFGHIJKLMNOPQRSTUVWXYZ0123456789-';
 function load(k,d){try{const v=localStorage.getItem(k);return v?JSON.parse(v):d}catch(e){return d}}
@@ -314,11 +328,12 @@ $('#btnSetSave').onclick=async()=>{
     if(extra.length&&confirm(`這支手機有 ${extra.length} 筆車牌雲端沒有，要一起上傳到試算表嗎？`)){
       const r=await api('importVehicles',{list:extra});setVehicles(r.vehicles);
     }else setVehicles(cloudV);
+    backendVer=j.version||'';save('lpr_bver',backendVer);showVer();
     $('#setMsg').textContent=`✅ 連線成功：${j.name}（車牌 ${vehicles.length} 筆）`;
     await sync({logs:true});
   }catch(e){$('#setMsg').textContent='❌ '+e.message;syncErr=e.message;updateSyncUI()}
 };
-$('#btnSyncNow').onclick=async()=>{if(!cloudOn()){toast('請先填好雲端網址和密碼');return}await sync({logs:true});toast(syncErr?'同步失敗：'+syncErr:'同步完成')};
+$('#btnSyncNow').onclick=async()=>{if(!cloudOn()){toast('請先填好雲端網址和密碼');return}try{const j=await api('ping');backendVer=j.version||'';save('lpr_bver',backendVer);showVer()}catch(e){}await sync({logs:true});toast(syncErr?'同步失敗：'+syncErr:'同步完成')};
 
 /* ---------- 分頁 ---------- */
 document.querySelectorAll('nav button').forEach(b=>b.onclick=()=>showTab(b.dataset.t));
@@ -657,6 +672,16 @@ window.addEventListener('appinstalled',()=>{deferredPrompt=null;updateInstallUI(
 $('#btnInstall').onclick=doInstall;$('#btnInstall2').onclick=doInstall;
 $('#btnInstallX').onclick=()=>{try{localStorage.setItem('lpr_install_x','1')}catch(e){};updateInstallUI()};
 if('serviceWorker' in navigator&&(location.protocol==='https:'||location.hostname==='localhost'))navigator.serviceWorker.register('sw.js').catch(()=>{});
+
+/* ---------- 版本 ---------- */
+let backendVer=load('lpr_bver','');
+function showVer(){
+  $('#verTag').textContent='v'+APP_VER;
+  $('#verInfo').innerHTML=`網頁版本：<b>v${APP_VER}</b>　｜　雲端程式：<b>${cloudOn()?(backendVer?'v'+esc(backendVer):'舊版（未標示版本）'):'未連線'}</b>`
+    +(cloudOn()&&backendVer&&backendVer!==APP_VER?'<br><span style="color:var(--warn)">網頁和雲端程式版本不同，請確認兩邊都已更新。</span>':'');
+}
+(function(){const last=load('lpr_seen_ver','');if(last&&last!==APP_VER)setTimeout(()=>toast('已更新到 v'+APP_VER),800);save('lpr_seen_ver',APP_VER)})();
+showVer();
 
 /* ---------- 分享給同事（QR Code） ---------- */
 const b64e=o=>btoa(unescape(encodeURIComponent(JSON.stringify(o)))).replace(/\+/g,'-').replace(/\//g,'_').replace(/=+$/,'');
