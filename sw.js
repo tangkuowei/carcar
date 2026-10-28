@@ -1,5 +1,5 @@
-// 車牌辨識管家 v1.4 － 離線快取
-const VER = 'lpr-v1.4';
+// 車牌辨識管家 v1.5 － 離線快取
+const VER = 'lpr-v1.5';
 const SHELL = ['./', './index.html', './manifest.webmanifest', './icon-192.png', './icon-512.png', './apple-touch-icon.png'];
 
 self.addEventListener('install', e => {

@@ -206,6 +206,7 @@ h3{margin:0 0 8px;font-size:16px}
     <h3>版本資訊</h3>
     <div class="mini" style="margin:0" id="verInfo"></div>
     <ul class="vlog">
+      <li><b>v1.5</b>　車牌稍微超出黃框也讀得到；紀錄縮圖不再出現破圖</li>
       <li><b>v1.4</b>　分享給同事 QR Code；加入版本號</li>
       <li><b>v1.3</b>　新增車牌只有車牌號碼、戶號必填</li>
       <li><b>v1.2</b>　可安裝到手機桌面、離線開啟</li>
@@ -231,7 +232,8 @@ h3{margin:0 0 8px;font-size:16px}
 <div class="toast" id="toast"></div>
 
 <script>
-const APP_VER='1.4';
+const APP_VER='1.5';
+const NEED_BACKEND='1.4'; // 需要的最低雲端程式版本
 const $=s=>document.querySelector(s);
 const WL='ABCDEFGHIJKLMNOPQRSTUVWXYZ0123456789-';
 function load(k,d){try{const v=localStorage.getItem(k);return v?JSON.parse(v):d}catch(e){return d}}
@@ -240,7 +242,7 @@ let cfg=load('lpr_cfg',{url:'',pin:'',device:''});
 let vehicles=load('lpr_vehicles',[]);
 let pending=load('lpr_pending',null);
 if(!pending){pending=load('lpr_logs',[]).map(l=>({...l}));save('lpr_pending',pending)} // 舊版本機紀錄轉成待上傳
-let cloudLogs=[],cloudStat=null,lastSync=0,syncErr='',syncing=false;
+const localImg={};let cloudLogs=[],cloudStat=null,lastSync=0,syncErr='',syncing=false;
 const cloudOn=()=>!!(cfg.url&&cfg.pin);
 const uid=()=>Date.now().toString(36)+Math.random().toString(36).slice(2,8);
 const esc=s=>String(s??'').replace(/[&<>"']/g,c=>({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[c]));
@@ -274,6 +276,7 @@ async function flush(){
     const batch=pending.slice(-10); // 先傳最舊的
     const j=await api('addLogs',{logs:batch});
     const ok=new Set(j.saved||[]);
+    batch.forEach(l=>{if(l.img&&ok.has(l.id))localImg[l.id]=l.img});
     pending=pending.filter(l=>!ok.has(l.id));savePending();
     if(!ok.size)break;
   }
@@ -441,6 +444,8 @@ function grabCrop(){
   const er=video.getBoundingClientRect(),gr=$('#guide').getBoundingClientRect();
   const sc=Math.max(er.width/vw,er.height/vh),ox=(er.width-vw*sc)/2,oy=(er.height-vh*sc)/2;
   let sx=(gr.left-er.left-ox)/sc,sy=(gr.top-er.top-oy)/sc,sw=gr.width/sc,sh=gr.height/sc;
+  // 往黃框外多讀一點，車牌稍微超出框也讀得到
+  const mx=sw*0.12,my=sh*0.18;sx-=mx;sy-=my;sw+=mx*2;sh+=my*2;
   sx=Math.max(0,sx);sy=Math.max(0,sy);sw=Math.min(vw-sx,sw);sh=Math.min(vh-sy,sh);
   const W=Math.round(Math.min(1200,Math.max(700,sw*1.5))),H=Math.round(W*sh/sw);
   const c=document.createElement('canvas');c.width=W;c.height=H;
@@ -588,7 +593,7 @@ function renderLogs(){
   if(cloudStat){['today','ok','unknown','fail','total'].forEach(k=>s[k]+=cloudStat[k]||0)}
   $('#stat').textContent=`今日 ${s.today} 筆：成功 ${s.ok}／未登記 ${s.unknown}／無法讀取 ${s.fail}　（總共 ${s.total} 筆${pending.length?`，其中 ${pending.length} 筆待上傳`:''}）`;
   const arr=filteredLogs().slice(0,500);
-  $('#lList').innerHTML=arr.length?arr.map(l=>`<div class="it">${l.img?`<img src="${esc(l.img)}" loading="lazy" referrerpolicy="no-referrer">`:'<img alt="">'}
+  $('#lList').innerHTML=arr.length?arr.map(l=>`<div class="it">${(localImg[l.id]||l.img)?`<img src="${esc(localImg[l.id]||l.img)}" loading="lazy" referrerpolicy="no-referrer" onerror="this.onerror=null;this.removeAttribute('src')">`:'<img alt="">'}
     <div class="mid"><div class="t1">${esc(l.status==='ok'?l.plate:(l.read||'（空白）'))} ${l.status==='ok'?'　'+esc(who(l)):''}</div>
     <div class="t2">${fmt(l.time)}｜${esc(l.source||'')}${l.device?'・'+esc(l.device):''}${l.status==='ok'&&l.unit&&l.name?'｜'+esc(l.unit):''}${l.similar?'｜相似比對 讀到 '+esc(l.read):''}${l._pending&&cloudOn()?'｜<b style="color:var(--warn)">待上傳</b>':''}</div></div>
     <span class="badge b-${l.status}">${ST[l.status]}</span>
@@ -678,7 +683,7 @@ let backendVer=load('lpr_bver','');
 function showVer(){
   $('#verTag').textContent='v'+APP_VER;
   $('#verInfo').innerHTML=`網頁版本：<b>v${APP_VER}</b>　｜　雲端程式：<b>${cloudOn()?(backendVer?'v'+esc(backendVer):'舊版（未標示版本）'):'未連線'}</b>`
-    +(cloudOn()&&backendVer&&backendVer!==APP_VER?'<br><span style="color:var(--warn)">網頁和雲端程式版本不同，請確認兩邊都已更新。</span>':'');
+    +(cloudOn()&&(!backendVer||parseFloat(backendVer)<parseFloat(NEED_BACKEND))?`<br><span style="color:var(--warn)">雲端程式需要更新到 v${NEED_BACKEND} 以上（重新貼上 Code.gs 並部署新版本）。</span>`:'');
 }
 (function(){const last=load('lpr_seen_ver','');if(last&&last!==APP_VER)setTimeout(()=>toast('已更新到 v'+APP_VER),800);save('lpr_seen_ver',APP_VER)})();
 showVer();
