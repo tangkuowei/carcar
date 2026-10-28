@@ -13,6 +13,7 @@
 <meta name="apple-mobile-web-app-status-bar-style" content="black-translucent">
 <meta name="apple-mobile-web-app-title" content="車牌辨識">
 <script src="https://cdn.jsdelivr.net/npm/tesseract.js@5.1.1/dist/tesseract.min.js"></script>
+<script src="https://cdn.jsdelivr.net/npm/qrcode-generator@1.4.4/qrcode.min.js"></script>
 <style>
 :root{--bg:#f3f5f8;--card:#fff;--ink:#1d2433;--sub:#6b7487;--pri:#1f6feb;--ok:#14935a;--warn:#d97706;--bad:#d1343b;--line:#e2e6ee}
 *{box-sizing:border-box}
@@ -22,6 +23,10 @@ header{position:relative;padding-top:calc(14px + env(safe-area-inset-top))!impor
 .install{display:none;align-items:center;gap:10px;background:#e8f0fe;border-radius:12px;padding:10px 12px;margin-bottom:12px}
 .install img{width:40px;height:40px;border-radius:9px;flex:none}
 .install .mid{flex:1;font-size:14px}
+#qrBox{display:none;text-align:center;margin-top:12px}
+#qrImg img{width:240px;max-width:100%;image-rendering:pixelated;border-radius:8px;box-shadow:0 1px 4px rgba(0,0,0,.15)}
+.linkbox{font-size:12px;color:var(--sub);word-break:break-all;background:#f3f5f8;border-radius:8px;padding:8px;margin:10px 0}
+.hl{outline:3px solid #ffd60a;outline-offset:2px}
 .ios{display:none;font-size:14px;line-height:1.7}
 .sync{position:absolute;right:12px;top:calc(14px + env(safe-area-inset-top));font-size:12px;font-weight:600;padding:4px 9px;border-radius:20px;background:#6b7487;color:#fff}
 .sync.on{background:var(--ok)}.sync.wait{background:var(--warn)}.sync.err{background:var(--bad)}
@@ -167,6 +172,22 @@ h3{margin:0 0 8px;font-size:16px}
       <button class="btn" id="btnSetSave">儲存並測試連線</button>
     </div>
     <p class="mini" id="setMsg"></p>
+  </div>
+  <div class="card" id="shareCard">
+    <h3>分享給同事</h3>
+    <p class="mini" style="margin:0 0 8px">同事用手機相機掃 QR Code，就會打開本系統並自動帶入雲端網址和密碼，只要再填自己的手機名稱即可。</p>
+    <label class="switch" style="margin:6px 0 10px"><input type="checkbox" id="shPin" checked> 一併帶入連線密碼</label>
+    <button class="btn" id="btnShare" style="width:100%">產生分享 QR Code</button>
+    <div id="qrBox">
+      <div id="qrImg"></div>
+      <div class="linkbox" id="shLink"></div>
+      <div class="row">
+        <button class="btn gray sm" id="btnCopy">複製連結</button>
+        <button class="btn green sm" id="btnLine">用 LINE 傳</button>
+        <button class="btn gray sm" id="btnSys">其他分享</button>
+      </div>
+      <p class="mini">⚠️ 帶密碼的 QR Code／連結只傳給自己人，不要貼在公開群組或布告欄。</p>
+    </div>
   </div>
   <div class="card">
     <h3>放到手機桌面</h3>
@@ -636,6 +657,47 @@ window.addEventListener('appinstalled',()=>{deferredPrompt=null;updateInstallUI(
 $('#btnInstall').onclick=doInstall;$('#btnInstall2').onclick=doInstall;
 $('#btnInstallX').onclick=()=>{try{localStorage.setItem('lpr_install_x','1')}catch(e){};updateInstallUI()};
 if('serviceWorker' in navigator&&(location.protocol==='https:'||location.hostname==='localhost'))navigator.serviceWorker.register('sw.js').catch(()=>{});
+
+/* ---------- 分享給同事（QR Code） ---------- */
+const b64e=o=>btoa(unescape(encodeURIComponent(JSON.stringify(o)))).replace(/\+/g,'-').replace(/\//g,'_').replace(/=+$/,'');
+const b64d=t=>JSON.parse(decodeURIComponent(escape(atob(t.replace(/-/g,'+').replace(/_/g,'/')))));
+const baseUrl=()=>location.origin+location.pathname.replace(/index\.html$/,'');
+let shareUrl='';
+function makeShare(){
+  if(!cloudOn()){toast('請先在上方填好雲端網址和密碼，並測試連線成功');return}
+  const o={u:cfg.url};if($('#shPin').checked)o.p=cfg.pin;
+  shareUrl=baseUrl()+'#join='+b64e(o);
+  $('#shLink').textContent=shareUrl;
+  if(window.qrcode){
+    const q=qrcode(0,'M');q.addData(shareUrl);q.make();
+    $('#qrImg').innerHTML=q.createImgTag(6,4);
+  }else $('#qrImg').innerHTML='<p class="mini">QR Code 元件載入失敗（請確認網路），可先用下方連結分享。</p>';
+  $('#qrBox').style.display='block';
+}
+$('#btnShare').onclick=makeShare;
+$('#shPin').onchange=()=>{if($('#qrBox').style.display==='block')makeShare()};
+$('#btnCopy').onclick=async()=>{try{await navigator.clipboard.writeText(shareUrl);toast('已複製連結')}catch(e){prompt('請長按複製這個連結：',shareUrl)}};
+const shareText=()=>'車牌辨識管家：點開連結就能使用（會自動連上社區雲端）\n'+shareUrl;
+$('#btnLine').onclick=()=>{location.href='https://line.me/R/share?text='+encodeURIComponent(shareText())};
+$('#btnSys').onclick=async()=>{if(navigator.share){try{await navigator.share({title:'車牌辨識管家',text:shareText()})}catch(e){}}else $('#btnCopy').click()};
+
+// 同事掃碼打開：自動帶入設定
+(function(){
+  const m=location.hash.match(/join=([A-Za-z0-9_-]+)/);
+  if(!m)return;
+  history.replaceState(null,'',location.pathname); // 網址列不留密碼
+  let o;try{o=b64d(m[1])}catch(e){toast('分享連結格式不正確');return}
+  if(!o||!o.u)return;
+  if(cfg.url&&cfg.url!==o.u&&!confirm('這支手機已經連到另一個雲端，要改成分享連結裡的雲端嗎？'))return;
+  $('#sUrl').value=o.u;if(o.p)$('#sPin').value=o.p;
+  showTab('t-set');
+  if(!o.p){$('#setMsg').textContent='已帶入雲端網址，請向管理員詢問密碼並填入，再按「儲存並測試連線」。';$('#sPin').classList.add('hl');$('#sPin').focus();return}
+  if(!$('#sDev').value){
+    $('#setMsg').textContent='👋 已自動帶入雲端設定。請在「這支手機的名稱」填上你的名字或位置（例：夜班小陳），再按「儲存並測試連線」。';
+    $('#sDev').classList.add('hl');setTimeout(()=>$('#sDev').focus(),300);
+  }else $('#btnSetSave').click();
+})();
+$('#sDev').oninput=()=>$('#sDev').classList.remove('hl');$('#sPin').oninput=()=>$('#sPin').classList.remove('hl');
 updateInstallUI();
 
 </script>
